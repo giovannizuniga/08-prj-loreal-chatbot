@@ -1,143 +1,207 @@
-/* —— basic reset —— */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* L'Oréal branded stylesheet
+   - Uses Montserrat (already loaded in index.html)
+   - Brand accents: deep black, warm gold, soft neutrals
+   - Simple, beginner-friendly comments included
+*/
+
+/* Brand color variables */
+:root {
+  --brand-black: #0b0b0b; /* primary text / header */
+  --brand-gold: #b8923a; /* accent color (L'Oréal warm gold) */
+  --brand-cream: #fbf8f2; /* subtle off-white background */
+  --muted-gray: #767676; /* secondary text */
+  --panel-bg: #ffffff; /* card / panel background */
+  --shell-bg: #f7f6f4; /* page shell background */
+  --focus-ring: rgba(184, 146, 58, 0.18);
 }
 
-/* —— body + fonts —— */
+/* Page basics */
+html,
 body {
-  font-family: "Montserrat", Arial, Helvetica, sans-serif;
-  color: #333;
-  display: flex;
-  justify-content: center;
+  height: 100%;
+  margin: 0;
+  font-family: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial;
+  background: linear-gradient(
+    180deg,
+    var(--shell-bg) 0%,
+    var(--brand-cream) 100%
+  );
+  color: var(--brand-black);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* Central layout container */
 .page-wrapper {
-  width: 90%;
-  max-width: 900px;
+  max-width: 980px;
+  margin: 28px auto;
+  padding: 24px;
+  box-sizing: border-box;
 }
 
-/* header */
+/* Header / Branding */
 .site-header {
   text-align: center;
-  padding-top: 50px;
+  margin-bottom: 18px;
+  padding: 8px 12px;
 }
 
+/* Logo: keep centered and scaled */
+.brand-logo {
+  display: inline-block;
+  max-width: 220px; /* logo scale */
+  height: auto;
+  margin-bottom: 8px;
+}
+
+/* Site title: bold and refined tone */
 .site-title {
-  font-size: 22px;
-  font-weight: 500;
-  margin-bottom: 10px;
+  margin: 4px 0 0;
+  font-weight: 700;
+  font-size: 1.9rem;
+  letter-spacing: 0.4px;
+  color: var(--brand-black);
 }
 
-/* chat window */
+/* Chat area card */
 .chatbox {
-  margin: 40px 0;
+  background: var(--panel-bg);
+  border-radius: 14px;
+  box-shadow: 0 6px 22px rgba(11, 11, 11, 0.06);
+  padding: 18px;
+  border: 1px solid rgba(11, 11, 11, 0.04);
 }
 
+/* Chat window that holds messages */
 .chat-window {
-  height: 360px;
-  border: 1px solid #000;
-  padding: 20px;
-  font-size: 18px;
-  line-height: 1.5;
+  height: 420px;
   overflow-y: auto;
-  background: #fafafa;
-  white-space: pre-line;
+  padding: 14px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff, #fcfcfc);
+  border: 1px solid rgba(11, 11, 11, 0.03);
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-/* messages */
-.msg {
-  margin-bottom: 14px;
-  line-height: 1.5;
+/* Message bubbles - bot vs user */
+.message {
+  max-width: 78%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 0.97rem;
+  line-height: 1.35;
+  box-shadow: 0 2px 6px rgba(11, 11, 11, 0.04);
 }
 
-.msg.user {
-  color: #000;
+/* Bot messages: light neutral background */
+.message.bot {
+  align-self: flex-start;
+  background: #f4f4f4;
+  color: var(--brand-black);
+  border-top-left-radius: 4px;
 }
 
-.msg.ai {
-  color: #666666;
+/* User messages: brand gold accent */
+.message.user {
+  align-self: flex-end;
+  background: var(--brand-gold);
+  color: #fff;
+  border-top-right-radius: 4px;
 }
 
-/* input row */
+/* Chat form row */
 .chat-form {
   display: flex;
-  gap: 12px;
-  margin-top: 16px;
+  gap: 10px;
+  align-items: center;
 }
 
-.chat-form input {
+/* Input box: clean, accessible focus states */
+.chat-form input[type="text"] {
   flex: 1;
-  padding: 12px;
-  border: 1px solid #ccc;
-  font-size: 18px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(11, 11, 11, 0.08);
+  background: #fff;
+  font-size: 1rem;
+  color: var(--brand-black);
+  outline: none;
+  transition: box-shadow 120ms ease, border-color 120ms ease;
 }
 
-.chat-form input:focus {
-  outline: 2px solid #000;
-  outline-offset: 2px;
+.chat-form input[type="text"]:focus {
+  box-shadow: 0 0 0 6px var(--focus-ring);
+  border-color: var(--brand-gold);
 }
 
-.chat-form button {
-  font-size: 18px;
-  background: #000;
-  color: #fff;
-  border: none;
-  padding: 12px;
-  width: 48px;
-  height: 48px;
-  display: flex;
+/* Send button: bold brand black with gold hover */
+#sendBtn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  background: var(--brand-black);
+  color: #fff;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: background 160ms ease, transform 70ms ease;
+  box-shadow: 0 3px 10px rgba(11, 11, 11, 0.12);
 }
 
-.chat-form button .material-icons {
-  font-size: 24px;
+#sendBtn:hover {
+  background: var(--brand-gold);
+  color: var(--brand-black);
+  transform: translateY(-1px);
 }
 
-.chat-form button:hover {
-  background: #666666;
-}
-
-.chat-form button:focus {
-  outline: 2px solid #000;
-  outline-offset: 2px;
-}
-
-/* visually hidden */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-/* footer */
+/* Footer: subdued, with gold accent on links */
 .site-footer {
-  margin: 60px 0 40px;
+  margin-top: 18px;
   text-align: center;
-  font-size: 14px;
-  color: #666;
+  color: var(--muted-gray);
+  font-size: 0.9rem;
 }
 
-.site-footer nav {
-  margin-top: 12px;
-}
-
-.site-footer a {
+.site-footer nav a {
+  color: var(--muted-gray);
   margin: 0 8px;
-  color: #000;
   text-decoration: none;
+  transition: color 120ms ease;
 }
 
-.site-footer a:hover {
-  color: #666666;
+.site-footer nav a:hover {
+  color: var(--brand-gold);
 }
+
+/* Accessibility helpers */
+.visually-hidden {
+  position: absolute !important;
+  height: 1px;
+  width: 1px;
+  overflow: hidden;
+  clip: rect(1px, 1px, 1px, 1px);
+  white-space: nowrap;
+}
+
+/* Small screens adjustments */
+@media (max-width: 560px) {
+  .page-wrapper {
+    padding: 12px;
+  }
+  .brand-logo {
+    max-width: 160px;
+  }
+  .site-title {
+    font-size: 1.4rem;
+  }
+  .chat-window {
+    height: 320px;
+  }
+}
+
+/* End of stylesheet */
