@@ -10,9 +10,9 @@ const userInput = document.getElementById("userInput");
 const chatWindow = document.getElementById("chatWindow");
 const sendBtn = document.getElementById("sendBtn");
 
-// Use empty workerUrl to force direct calls from this Codespace (uses secrets.js).
-// In production you should use a worker/proxy instead to keep your key secret.
-const workerUrl = "https://loreal-worker.gaz9.workers.dev"; // was "https://loreal-worker.gaz9.workers.dev/";
+// Use the Cloudflare Worker proxy URL (ensure the worker is configured to allow CORS).
+// Note the trailing slash — some workers require it for routing.
+const workerUrl = "https://loreal-worker.gaz9.workers.dev/";
 
 // Helper: escape HTML then preserve newlines as <br>
 function formatMessageForDisplay(text) {
@@ -80,7 +80,18 @@ async function timeoutFetch(url, opts = {}, timeout = 8000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   try {
-    const res = await fetch(url, { ...opts, signal: controller.signal });
+    // Ensure cross-origin requests use CORS mode and accept JSON
+    const finalOpts = {
+      mode: "cors",
+      ...opts,
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        // keep any caller headers (opts.headers) while ensuring Accept
+        ...(opts.headers || {}),
+      },
+    };
+    const res = await fetch(url, finalOpts);
     clearTimeout(id);
     return res;
   } catch (err) {
@@ -109,6 +120,13 @@ async function fetchChatCompletion(conversation) {
         },
         8000
       ); // 8s timeout for worker
+
+      // Detect opaque responses (common when CORS is not enabled)
+      if (res.type === "opaque") {
+        throw new Error(
+          "Worker returned an opaque response (likely a CORS issue). Ensure the worker sets Access-Control-Allow-Origin to allow your page's origin."
+        );
+      }
 
       let data;
       try {
@@ -155,7 +173,7 @@ async function fetchChatCompletion(conversation) {
       } else {
         // No API key available locally -> show readable error to user
         throw new Error(
-          "Unable to contact the proxy service (network/CORS/timeout). If you are developing locally, either run a proxy worker or add a local secrets.js with OPENAI_API_KEY to allow a direct fallback."
+          "Unable to contact the proxy service (network/CORS/timeout). Ensure the worker URL is correct and the worker sets Access-Control-Allow-Origin. For local development you can also add a secrets.js with OPENAI_API_KEY for a direct fallback."
         );
       }
     }
