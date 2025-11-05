@@ -75,61 +75,96 @@ function setBusy(isBusy) {
   }
 }
 
+// Helper: fetch with timeout using AbortController (simple, beginner-friendly)
+async function timeoutFetch(url, opts = {}, timeout = 8000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { ...opts, signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch (err) {
+    clearTimeout(id);
+    throw err;
+  }
+}
+
 // Send conversation to the Cloudflare Worker (preferred) or OpenAI directly as fallback.
 // Returns assistant text.
 async function fetchChatCompletion(conversation) {
-  // Always send the full conversation history (safe copy)
   const payloadMessages = conversation.map((m) => ({
     role: m.role,
     content: m.content,
   }));
 
-  // Try worker proxy only when configured (empty => skip)
+  // Try the worker proxy first (if configured)
   if (workerUrl && workerUrl.trim() !== "") {
-    const res = await fetch(workerUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: payloadMessages }),
-    });
-
-    let data;
     try {
-      data = await res.json();
-    } catch (err) {
-      throw new Error(`Worker returned non-JSON response: ${err.message}`);
-    }
+      const res = await timeoutFetch(
+        workerUrl,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: payloadMessages }),
+        },
+        8000
+      ); // 8s timeout for worker
 
-    console.debug("Worker response:", res.status, res.statusText, data);
-
-    if (!res.ok) {
-      let msg = `${res.status} ${res.statusText}`;
-      if (data) {
-        if (typeof data.error === "string") msg = data.error;
-        else if (data.error && data.error.message) msg = data.error.message;
-        else if (data.message) msg = data.message;
-        else msg = JSON.stringify(data);
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        throw new Error(`Worker returned invalid JSON: ${parseErr.message}`);
       }
-      throw new Error(msg);
-    }
 
-    if (data.assistant) return data.assistant;
-    if (data.choices && data.choices[0] && data.choices[0].message)
-      return data.choices[0].message.content.trim();
-    if (data.reply) return data.reply;
-    if (data.error) {
-      const e = data.error;
-      const message =
-        (e && e.message) || (typeof e === "string" && e) || JSON.stringify(e);
-      throw new Error(message);
+      console.debug("Worker response:", res.status, res.statusText, data);
+
+      if (!res.ok) {
+        let msg = `${res.status} ${res.statusText}`;
+        if (data) {
+          if (typeof data.error === "string") msg = data.error;
+          else if (data.error && data.error.message) msg = data.error.message;
+          else if (data.message) msg = data.message;
+          else msg = JSON.stringify(data);
+        }
+        throw new Error(msg);
+      }
+
+      if (data.assistant) return data.assistant;
+      if (data.choices && data.choices[0] && data.choices[0].message)
+        return data.choices[0].message.content.trim();
+      if (data.reply) return data.reply;
+      if (data.error) {
+        const e = data.error;
+        const message =
+          (e && e.message) || (typeof e === "string" && e) || JSON.stringify(e);
+        throw new Error(message);
+      }
+      return JSON.stringify(data);
+    } catch (workerErr) {
+      // Network/CORS/timeout errors often show as TypeError or "Failed to fetch"
+      console.warn(
+        "Worker request failed, attempting fallback if possible:",
+        workerErr
+      );
+
+      // If developer provided a local API key (secrets.js), try direct OpenAI call as fallback
+      if (typeof OPENAI_API_KEY !== "undefined" && OPENAI_API_KEY) {
+        console.info("Falling back to direct OpenAI call (development only).");
+        // fallthrough to direct call below
+      } else {
+        // No API key available locally -> show readable error to user
+        throw new Error(
+          "Unable to contact the proxy service (network/CORS/timeout). If you are developing locally, either run a proxy worker or add a local secrets.js with OPENAI_API_KEY to allow a direct fallback."
+        );
+      }
     }
-    return JSON.stringify(data);
   }
 
   // ---- Direct OpenAI call (development only) ----
-  // Ensure the local secrets.js defines: const OPENAI_API_KEY = "sk-...";
   if (typeof OPENAI_API_KEY === "undefined" || !OPENAI_API_KEY) {
     throw new Error(
-      "OPENAI_API_KEY is not set. Add your key to secrets.js in the Codespace."
+      "OPENAI_API_KEY is not set. Add your key to secrets.js in the Codespace or run a worker proxy."
     );
   }
 
@@ -141,19 +176,22 @@ async function fetchChatCompletion(conversation) {
     temperature: 0.2,
   };
 
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+  // Use timeoutFetch for the direct call as well
+  const res = await timeoutFetch(
+    endpoint,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    12000
+  ); // 12s timeout for OpenAI
 
   const data = await res.json();
 
-  // Better error message extraction so errors like "Incorrect API key provided: undefined"
-  // surface the real message instead of [object Object].
   if (!res.ok) {
     const errMsg =
       (data && data.error && (data.error.message || data.error)) ||
