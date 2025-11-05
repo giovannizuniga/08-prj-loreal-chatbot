@@ -12,7 +12,7 @@ const sendBtn = document.getElementById("sendBtn");
 
 // Use empty workerUrl to force direct calls from this Codespace (uses secrets.js).
 // In production you should use a worker/proxy instead to keep your key secret.
-const workerUrl = ""; // was "https://loreal-worker.gaz9.workers.dev/";
+const workerUrl = "https://loreal-worker.gaz9.workers.dev"; // was "https://loreal-worker.gaz9.workers.dev/";
 
 // Helper: escape HTML then preserve newlines as <br>
 function formatMessageForDisplay(text) {
