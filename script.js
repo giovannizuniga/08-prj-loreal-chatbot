@@ -1,23 +1,42 @@
 // Simple beginner-friendly chat script that:
 // - Captures user input
-// - Sends messages to a Cloudflare Worker proxy (recommended) or falls back to OpenAI (not recommended in browser)
+// - Sends messages to a Cloudflare Worker proxy (recommended) or falls back to OpenAI (development only)
 // - Displays responses in the chat window, preserving line breaks
 // - System message instructs the assistant to refuse off-topic requests politely
 
-// Get DOM elements once
+// Get DOM elements once (guard if HTML structure is missing)
 const chatForm = document.getElementById("chatForm");
-const userInput = document.getElementById("userInput");
+let userInput = document.getElementById("userInput");
 const chatWindow = document.getElementById("chatWindow");
-const sendBtn = document.getElementById("sendBtn");
+let sendBtn = document.getElementById("sendBtn");
+
+// If the expected input/button are missing in the page (common student typo), create them so the UI still works.
+if (!chatForm) {
+  console.error("Missing #chatForm in the page — script cannot initialize.");
+}
+if (!userInput) {
+  // Create a simple input and append to the form so students with a missing id still get a working UI
+  userInput = document.createElement("input");
+  userInput.id = "userInput";
+  userInput.required = true;
+  if (chatForm) chatForm.appendChild(userInput);
+}
+if (!sendBtn) {
+  sendBtn = document.createElement("button");
+  sendBtn.id = "sendBtn";
+  sendBtn.type = "submit";
+  sendBtn.textContent = "Send";
+  if (chatForm) chatForm.appendChild(sendBtn);
+}
 
 // Use the Cloudflare Worker proxy URL (ensure the worker is configured to allow CORS).
-// Note the trailing slash — some workers require it for routing.
+// Keep the trailing slash if your worker expects it.
 const workerUrl = "https://loreal-worker.gaz9.workers.dev/";
 
 // Helper: escape HTML then preserve newlines as <br>
 function formatMessageForDisplay(text) {
   if (!text) return "";
-  const escaped = text
+  const escaped = String(text)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
@@ -28,21 +47,26 @@ function formatMessageForDisplay(text) {
 function appendMessage(role, text) {
   const el = document.createElement("div");
   el.className = `message ${role}`;
-  // Use innerHTML after escaping + newline -> <br> conversion so spacing is preserved
   el.innerHTML = formatMessageForDisplay(text);
-  chatWindow.appendChild(el);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
+  if (chatWindow) {
+    chatWindow.appendChild(el);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  }
   return el;
 }
 
 // Typing indicator helpers
 function addTypingIndicator() {
+  const existing = document.getElementById("typingIndicator");
+  if (existing) return;
   const el = document.createElement("div");
   el.className = "message bot typing";
   el.id = "typingIndicator";
   el.textContent = "L'Oréal Advisor is typing…";
-  chatWindow.appendChild(el);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
+  if (chatWindow) {
+    chatWindow.appendChild(el);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  }
 }
 function removeTypingIndicator() {
   const el = document.getElementById("typingIndicator");
@@ -67,11 +91,11 @@ messages.push({ role: "assistant", content: initialGreeting });
 // Disable/enable controls while awaiting a response
 function setBusy(isBusy) {
   if (isBusy) {
-    sendBtn.setAttribute("disabled", "disabled");
-    userInput.setAttribute("disabled", "disabled");
+    sendBtn && sendBtn.setAttribute("disabled", "disabled");
+    userInput && userInput.setAttribute("disabled", "disabled");
   } else {
-    sendBtn.removeAttribute("disabled");
-    userInput.removeAttribute("disabled");
+    sendBtn && sendBtn.removeAttribute("disabled");
+    userInput && userInput.removeAttribute("disabled");
   }
 }
 
@@ -80,14 +104,12 @@ async function timeoutFetch(url, opts = {}, timeout = 8000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   try {
-    // Ensure cross-origin requests use CORS mode and accept JSON
     const finalOpts = {
       mode: "cors",
       ...opts,
       signal: controller.signal,
       headers: {
         Accept: "application/json",
-        // keep any caller headers (opts.headers) while ensuring Accept
         ...(opts.headers || {}),
       },
     };
@@ -98,6 +120,43 @@ async function timeoutFetch(url, opts = {}, timeout = 8000) {
     clearTimeout(id);
     throw err;
   }
+}
+
+// Try to load a local secrets file if OPENAI_API_KEY is not defined.
+// This helps when students accidentally created seret.js or secrets.js with the key.
+function loadLocalScript(url) {
+  return new Promise((resolve) => {
+    const s = document.createElement("script");
+    s.src = url;
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+}
+
+async function ensureApiKeyLoaded() {
+  // If already defined, nothing to do
+  if (typeof OPENAI_API_KEY !== "undefined" && OPENAI_API_KEY) return true;
+
+  // Try common filenames the student might have created (secrets.js or seret.js)
+  const candidates = ["secrets.js", "seret.js"];
+  for (const c of candidates) {
+    // If the script tag already exists, skip loading again
+    if (document.querySelector(`script[src="${c}"]`)) {
+      if (typeof OPENAI_API_KEY !== "undefined" && OPENAI_API_KEY) return true;
+      continue;
+    }
+    // Attempt to load the file; it's okay if this fails
+    // (students sometimes have typos — we try both names)
+    // Note: this only works when files are served by the dev server or Codespace.
+    // Loading will fail if the file isn't accessible from the page.
+    // We await the result so we can check OPENAI_API_KEY after load.
+    // Keep the operation short to avoid blocking UX.
+    // eslint-disable-next-line no-await-in-loop
+    await loadLocalScript(c);
+    if (typeof OPENAI_API_KEY !== "undefined" && OPENAI_API_KEY) return true;
+  }
+  return false;
 }
 
 // Send conversation to the Cloudflare Worker (preferred) or OpenAI directly as fallback.
@@ -148,6 +207,7 @@ async function fetchChatCompletion(conversation) {
         throw new Error(msg);
       }
 
+      // Accept common worker response shapes
       if (data.assistant) return data.assistant;
       if (data.choices && data.choices[0] && data.choices[0].message)
         return data.choices[0].message.content.trim();
@@ -166,24 +226,32 @@ async function fetchChatCompletion(conversation) {
         workerErr
       );
 
-      // If developer provided a local API key (secrets.js), try direct OpenAI call as fallback
-      if (typeof OPENAI_API_KEY !== "undefined" && OPENAI_API_KEY) {
-        console.info("Falling back to direct OpenAI call (development only).");
-        // fallthrough to direct call below
+      // Try to load local secrets files (students sometimes forgot to include file)
+      const keyAvailable = await ensureApiKeyLoaded();
+
+      if (keyAvailable) {
+        console.info(
+          "Falling back to direct OpenAI call (development only) because worker failed."
+        );
+        // fall through to direct OpenAI call below
       } else {
-        // No API key available locally -> show readable error to user
+        // No API key available locally -> show readable error to user with concrete next steps
         throw new Error(
-          "Unable to contact the proxy service (network/CORS/timeout). Ensure the worker URL is correct and the worker sets Access-Control-Allow-Origin. For local development you can also add a secrets.js with OPENAI_API_KEY for a direct fallback."
+          "Unable to contact the proxy service (network/CORS/timeout). To fix: 1) Ensure your Cloudflare Worker URL is correct and the worker sets Access-Control-Allow-Origin (e.g., '*'). 2) Open the browser Network tab to inspect the worker request and CORS preflight. 3) For local development you can add a secrets.js file defining OPENAI_API_KEY or fix the worker. (See console for the worker error.)"
         );
       }
     }
   }
 
   // ---- Direct OpenAI call (development only) ----
+  // Ensure local key is loaded (helps if students had a filename typo)
   if (typeof OPENAI_API_KEY === "undefined" || !OPENAI_API_KEY) {
-    throw new Error(
-      "OPENAI_API_KEY is not set. Add your key to secrets.js in the Codespace or run a worker proxy."
-    );
+    const loaded = await ensureApiKeyLoaded();
+    if (!loaded) {
+      throw new Error(
+        "OPENAI_API_KEY is not set. Add a secrets.js file with: const OPENAI_API_KEY = 'sk-...'; (development only)."
+      );
+    }
   }
 
   const endpoint = "https://api.openai.com/v1/chat/completions";
@@ -231,50 +299,56 @@ async function fetchChatCompletion(conversation) {
 }
 
 // Form submit handler: capture input, show user message, call API, display reply
-chatForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const text = userInput.value.trim();
-  if (!text) return;
+if (chatForm) {
+  chatForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const text = (userInput && userInput.value ? userInput.value : "").trim();
+    if (!text) return;
 
-  // Append user's message and add to conversation
-  appendMessage("user", text);
-  messages.push({ role: "user", content: text });
+    // Append user's message and add to conversation
+    appendMessage("user", text);
+    messages.push({ role: "user", content: text });
 
-  // Clear input and prepare UI
-  userInput.value = "";
-  userInput.focus();
+    // Clear input and prepare UI
+    if (userInput) userInput.value = "";
+    userInput && userInput.focus();
 
-  // Show typing indicator and disable controls
-  addTypingIndicator();
-  setBusy(true);
+    // Show typing indicator and disable controls
+    addTypingIndicator();
+    setBusy(true);
 
-  try {
-    const assistantText = await fetchChatCompletion(messages);
+    try {
+      const assistantText = await fetchChatCompletion(messages);
 
-    // Remove typing indicator
-    removeTypingIndicator();
+      // Remove typing indicator
+      removeTypingIndicator();
 
-    if (!assistantText) {
+      if (!assistantText) {
+        appendMessage(
+          "bot",
+          "Sorry, I couldn't generate a response. Please try again."
+        );
+        setBusy(false);
+        return;
+      }
+
+      // Append assistant message and add to history
+      appendMessage("bot", assistantText);
+      messages.push({ role: "assistant", content: assistantText });
+    } catch (err) {
+      removeTypingIndicator();
+      // Show a readable error message in the chat (not the console)
       appendMessage(
         "bot",
-        "Sorry, I couldn't generate a response. Please try again."
+        `There was an error contacting the API: ${err.message || String(err)}`
       );
+      console.error("Chat error:", err);
+    } finally {
       setBusy(false);
-      return;
     }
-
-    // Append assistant message and add to history
-    appendMessage("bot", assistantText);
-    messages.push({ role: "assistant", content: assistantText });
-  } catch (err) {
-    removeTypingIndicator();
-    // Show a readable error message in the chat (not the console)
-    appendMessage(
-      "bot",
-      `There was an error contacting the API: ${err.message || String(err)}`
-    );
-    console.error("Chat error:", err);
-  } finally {
-    setBusy(false);
-  }
-});
+  });
+} else {
+  console.error(
+    "chatForm not found — please check index.html contains a form with id='chatForm'"
+  );
+}
